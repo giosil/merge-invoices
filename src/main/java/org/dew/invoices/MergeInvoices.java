@@ -22,19 +22,43 @@ import javax.xml.transform.stream.StreamSource;
 public 
 class MergeInvoices 
 {
+  public static final String OUT_FILE = "_invoices.html";
+  
+  public static
+  void main(String[] args)
+  {
+    String srcFolder = ".";
+    
+    if(args != null && args.length > 0) {
+      srcFolder = args[0];
+    }
+    
+    try {
+      merge(srcFolder);
+    }
+    catch(Exception ex) {
+      ex.printStackTrace();
+      System.exit(1);
+    }
+  }
+  
   public static
   int merge(String srcFolder)
     throws Exception
   {
-    File folder = new File(srcFolder);
-    if(!folder.exists()) {
-      System.out.println("Folder " + folder + " not exists.");
+    if(srcFolder == null || srcFolder.length() == 0) {
+      srcFolder = ".";
+    }
+    
+    File fSrcfolder = new File(srcFolder);
+    if(!fSrcfolder.exists()) {
+      System.out.println("Source folder " + fSrcfolder + " not exists.");
       return -1;
     }
     
-    File[] afFiles = folder.listFiles();
+    File[] afFiles = fSrcfolder.listFiles();
     if(afFiles == null || afFiles.length == 0) {
-      System.out.println("La cartella " + srcFolder + " non contiene file.");
+      System.out.println("Source folder " + srcFolder + " contains no files.");
       return 0;
     }
     
@@ -45,20 +69,29 @@ class MergeInvoices
   int merge(String srcFolder, String outFolder)
     throws Exception
   {
-    File folder = new File(srcFolder);
-    if(!folder.exists()) {
-      System.out.println("Folder " + folder + " not exists.");
+    if(srcFolder == null || srcFolder.length() == 0) {
+      srcFolder = ".";
+    }
+    if(outFolder == null || outFolder.length() == 0) {
+      outFolder = srcFolder;
+    }
+    
+    File fSrcfolder = new File(srcFolder);
+    if(!fSrcfolder.exists()) {
+      System.out.println("Source folder " + fSrcfolder + " not exists.");
       return -1;
     }
     
-    File[] afFiles = folder.listFiles();
-    if(afFiles == null || afFiles.length == 0) {
-      System.out.println("La cartella " + srcFolder + " non contiene file.");
-      return 0;
+    File fOutfolder = new File(outFolder);
+    if(!fOutfolder.exists()) {
+      System.out.println("Output folder " + fOutfolder + " not exists.");
+      return -1;
     }
     
-    if(outFolder == null || outFolder.length() == 0) {
-      outFolder = srcFolder;
+    File[] afFiles = fSrcfolder.listFiles();
+    if(afFiles == null || afFiles.length == 0) {
+      System.out.println("Source folder " + srcFolder + " contains no files.");
+      return 0;
     }
     
     return merge(afFiles, outFolder);
@@ -92,6 +125,12 @@ class MergeInvoices
       outFolder = ".";
     }
     
+    File fOutfolder = new File(outFolder);
+    if(!fOutfolder.exists()) {
+      System.out.println("Output folder " + fOutfolder + " not exists.");
+      return -1;
+    }
+    
     int count = 0;
     OutputStream out = null;
     for(int i = 0; i < afFiles.length; i++) {
@@ -108,51 +147,49 @@ class MergeInvoices
       }
       if(!ext.equalsIgnoreCase("xml")) continue;
       
-      System.out.println("Convert " + fileName + "...");
-      
       byte[] content = readFile(file.getAbsolutePath());
       if(content == null || content.length < 10) continue;
       
       try {
         URL url = getStyleSheet(content);
         
-        if(url != null) {
-          Source xslSource = new StreamSource(url.toString());
-          Source xmlSource = new StreamSource(new ByteArrayInputStream(content));
+        if(url == null) continue;
+        
+        Source xslSource = new StreamSource(url.toString());
+        Source xmlSource = new StreamSource(new ByteArrayInputStream(content));
+        
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        Transformer transformer = transformerFactory.newTransformer(xslSource);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        Result htmResult = new StreamResult(baos);
+        transformer.transform(xmlSource, htmResult);
+        byte[] result = baos.toByteArray();
+        
+        if(result != null && result.length > 10) {
+          count++;
           
-          TransformerFactory transformerFactory = TransformerFactory.newInstance();
-          Transformer transformer = transformerFactory.newTransformer(xslSource);
-          ByteArrayOutputStream baos = new ByteArrayOutputStream();
-          Result htmResult = new StreamResult(baos);
-          transformer.transform(xmlSource, htmResult);
-          byte[] result = baos.toByteArray();
-          
-          if(result != null && result.length > 10) {
-            count++;
-            
-            String sHtml = new String(result);
-            if(count == 1) {
-              int iEndBody = sHtml.indexOf("</body>");
-              if(iEndBody > 0) {
-                sHtml = sHtml.substring(0, iEndBody);
-                sHtml += "<div style=\"page-break-before: always;\"></div>";
-              }
+          String html = new String(result);
+          if(count == 1) {
+            int iEndBody = html.indexOf("</body>");
+            if(iEndBody > 0) {
+              html = html.substring(0, iEndBody);
+              html += "<div style=\"page-break-before: always;\"></div>";
             }
-            else {
-              int iStartBody = sHtml.indexOf("<body>");
-              int iEndBody = sHtml.indexOf("</body>");
-              if(iStartBody > 0 && iEndBody > 0) {
-                sHtml = sHtml.substring(iStartBody+6, iEndBody);
-                sHtml += "<div style=\"page-break-before: always;\"></div>";
-              }
-            }
-            
-            out = new FileOutputStream(outFolder + File.separator + "_invoices.html", count > 1);
-            out.write(sHtml.getBytes());
-            out.close();
-            
-            System.out.println("Transform " + fileName + " -> OK");
           }
+          else {
+            int iStartBody = html.indexOf("<body>");
+            int iEndBody   = html.indexOf("</body>");
+            if(iStartBody > 0 && iEndBody > 0) {
+              html = html.substring(iStartBody+6, iEndBody);
+              html += "<div style=\"page-break-before: always;\"></div>";
+            }
+          }
+          
+          out = new FileOutputStream(outFolder + File.separator + OUT_FILE, count > 1);
+          out.write(html.getBytes());
+          out.close();
+          
+          System.out.println("Transform " + fileName + " -> OK");
         }
       }
       catch(Exception ex) {
@@ -164,7 +201,7 @@ class MergeInvoices
     }
     
     if(count > 0) {
-      out = new FileOutputStream(outFolder + File.separator + "_invoices.html", true);
+      out = new FileOutputStream(outFolder + File.separator + OUT_FILE, true);
       out.write("</body></html>".getBytes());
       out.close();
     }
